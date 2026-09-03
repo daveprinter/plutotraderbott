@@ -18,7 +18,8 @@ export interface DerivAuthResult {
 }
 
 export function detectTokenMode(token: string): DerivMode {
-  // Deriv PAT tokens are long and typically prefixed / dot-separated.
+  // Deriv PAT tokens are prefixed `pat_`, otherwise long / dot-separated.
+  if (/^pat_/i.test(token)) return "pat";
   if (/^[a-z0-9]{1,3}-/i.test(token) && token.length < 40) return "legacy";
   if (token.length > 40 || token.includes(".")) return "pat";
   return "legacy";
