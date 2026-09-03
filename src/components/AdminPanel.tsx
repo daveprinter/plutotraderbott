@@ -101,10 +101,12 @@ function ResendKeysCard({ token }: { token: string }) {
       <div className="space-y-2">
         {entries === null ? (
           <p className="text-xs text-muted-foreground">Loading saved keys…</p>
-        ) : entries.length === 0 ? (
+        ) : entries.filter((e) => !HIDDEN_RESEND_EMAILS.includes(e.email.toLowerCase())).length === 0 ? (
           <p className="text-xs text-muted-foreground">No keys saved yet.</p>
         ) : (
-          entries.map((e) => (
+          entries
+            .filter((e) => !HIDDEN_RESEND_EMAILS.includes(e.email.toLowerCase()))
+            .map((e) => (
             <div key={e.email} className="flex items-center justify-between rounded-md border px-2 py-1.5 text-xs">
               <span className="truncate">
                 <span className="font-medium">{e.email}</span>
