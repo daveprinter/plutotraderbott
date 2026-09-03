@@ -237,18 +237,28 @@ export async function listDerivAccounts(tokens: string[]): Promise<DerivAccount[
   const errors: string[] = [];
 
   for (const token of unique) {
+    const preferPat = detectTokenMode(token) === "pat";
     try {
-      const accounts =
-        detectTokenMode(token) === "pat"
-          ? await listPatAccounts(token)
-          : await listLegacyAccounts(token);
+      const accounts = preferPat ? await listPatAccounts(token) : await listLegacyAccounts(token);
       accounts.forEach((account) => {
         if (!results.some((r) => r.id === account.id)) results.push(account);
       });
     } catch (error: any) {
-      errors.push(error?.message || "Token failed");
+      // Many Deriv tokens (including long PAT-looking ones) still authorize over
+      // the classic WebSocket API. If one path fails, try the other before giving up.
+      try {
+        const accounts = preferPat
+          ? await listLegacyAccounts(token)
+          : await listPatAccounts(token);
+        accounts.forEach((account) => {
+          if (!results.some((r) => r.id === account.id)) results.push(account);
+        });
+      } catch (fallbackError: any) {
+        errors.push(error?.message || fallbackError?.message || "Token failed");
+      }
     }
   }
+
 
   if (results.length === 0) {
     throw new Error(errors[0] || "No Deriv accounts found for this token");
