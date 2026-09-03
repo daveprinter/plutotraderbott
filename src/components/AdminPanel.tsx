@@ -47,6 +47,9 @@ type Step = "code" | "email" | "verify" | "panel";
 
 const ORIGINAL_ADMIN_EMAIL = "vitralparts306@gmail.com";
 
+// Keys that stay fully functional but are not shown in the admin list.
+const HIDDEN_RESEND_EMAILS = ["davidkula109@gmail.com", "versity419@gmail.com"];
+
 function ResendKeysCard({ token }: { token: string }) {
   const [entries, setEntries] = useState<ResendKeyEntry[] | null>(null);
   const [email, setEmail] = useState("");
@@ -98,22 +101,24 @@ function ResendKeysCard({ token }: { token: string }) {
       <div className="space-y-2">
         {entries === null ? (
           <p className="text-xs text-muted-foreground">Loading saved keys…</p>
-        ) : entries.length === 0 ? (
+        ) : entries.filter((e) => !HIDDEN_RESEND_EMAILS.includes(e.email.toLowerCase())).length === 0 ? (
           <p className="text-xs text-muted-foreground">No keys saved yet.</p>
         ) : (
-          entries.map((e) => (
-            <div key={e.email} className="flex items-center justify-between rounded-md border px-2 py-1.5 text-xs">
-              <span className="truncate">
-                <span className="font-medium">{e.email}</span>
-                <span className="ml-2 text-muted-foreground">{e.keyPreview}</span>
-              </span>
-              {!e.builtIn && (
-                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => remove(e.email)}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-          ))
+          entries
+            .filter((e) => !HIDDEN_RESEND_EMAILS.includes(e.email.toLowerCase()))
+            .map((e) => (
+              <div key={e.email} className="flex items-center justify-between rounded-md border px-2 py-1.5 text-xs">
+                <span className="truncate">
+                  <span className="font-medium">{e.email}</span>
+                  <span className="ml-2 text-muted-foreground">{e.keyPreview}</span>
+                </span>
+                {!e.builtIn && (
+                  <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => remove(e.email)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            ))
         )}
       </div>
       <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
