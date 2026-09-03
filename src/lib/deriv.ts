@@ -1,7 +1,7 @@
 export const DERIV_LEGACY_APP_ID = "1089";
 
-// PAT tokens use Deriv's new PAT-format App ID.
-export const DERIV_NEW_APP_ID = "34itGR0x0KDRaNjXQ0Kaj";
+// PAT REST requests must use the App ID registered for this integration.
+export const DERIV_NEW_APP_ID = "33uaaVh8xkm8lpUWTHDkm";
 
 const DERIV_LEGACY_WS = `wss://ws.derivws.com/websockets/v3?app_id=${DERIV_LEGACY_APP_ID}`;
 
@@ -53,13 +53,22 @@ async function derivRest<T>(path: string, token: string, init?: RequestInit): Pr
 
   let body: any = null;
   try {
-    body = await response.json();
+    const rawBody = await response.text();
+    try {
+      body = rawBody ? JSON.parse(rawBody) : null;
+    } catch {
+      body = rawBody;
+    }
   } catch {
     /* ignore */
   }
 
   if (!response.ok) {
-    throw new Error(extractDerivRestError(body, `Deriv PAT API failed (${response.status})`));
+    const fallback =
+      typeof body === "string" && body.trim()
+        ? body.trim()
+        : `Deriv PAT API failed (${response.status})`;
+    throw new Error(extractDerivRestError(body, fallback));
   }
   return body as T;
 }
