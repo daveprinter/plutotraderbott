@@ -292,27 +292,53 @@ export async function authorizeDerivAccount(account: DerivAccount): Promise<Deri
   }
 
   // PAT: request an OTP-authenticated WebSocket URL for this exact account.
-  const otpResponse = await derivRest<{ data?: { url?: string; websocket_url?: string } }>(
-    `/accounts/${encodeURIComponent(account.id)}/otp`,
-    account.token,
-    { method: "POST" },
-  );
+  try {
+    const otpResponse = await derivRest<{ data?: { url?: string; websocket_url?: string } }>(
+      `/accounts/${encodeURIComponent(account.id)}/otp`,
+      account.token,
+      { method: "POST" },
+    );
 
-  const websocketUrl = String(otpResponse.data?.url || otpResponse.data?.websocket_url || "");
-  if (!websocketUrl) throw new Error("Deriv PAT API did not return a WebSocket URL");
+    const websocketUrl = String(otpResponse.data?.url || otpResponse.data?.websocket_url || "");
+    if (!websocketUrl) throw new Error("Deriv PAT API did not return a WebSocket URL");
 
-  const ws = new DerivWS();
-  ws.mode = "pat";
-  await ws.connect(websocketUrl);
+    const ws = new DerivWS();
+    ws.mode = "pat";
+    await ws.connect(websocketUrl);
 
-  return {
-    ws,
-    loginid: account.id,
-    currency: account.currency,
-    balance: account.balance,
-    mode: "pat",
-  };
+    return {
+      ws,
+      loginid: account.id,
+      currency: account.currency,
+      balance: account.balance,
+      mode: "pat",
+    };
+  } catch (patError: any) {
+    // Fall back to the classic WebSocket authorize, which accepts most Deriv tokens.
+    const ws = new DerivWS();
+    ws.mode = "legacy";
+    try {
+      await ws.connect();
+      const auth = await ws.send<any>({ authorize: account.token });
+      if (!auth?.authorize) throw new Error("Invalid token");
+      return {
+        ws,
+        loginid: String(auth.authorize.loginid),
+        currency: String(auth.authorize.currency || account.currency || "USD"),
+        balance: Number(auth.authorize.balance ?? account.balance ?? 0),
+        mode: "legacy",
+      };
+    } catch (legacyError: any) {
+      ws.close();
+      throw new Error(
+        patError?.message?.includes("401")
+          ? "Deriv rejected this token (401). Create a new API token at app.deriv.com with Read, Trade and Payments scopes, then paste it again."
+          : patError?.message || legacyError?.message || "Could not connect to Deriv",
+      );
+    }
+  }
 }
+
 
 export function accountLabel(account: DerivAccount) {
   return `${account.isDemo ? "Demo" : "Real"} · ${account.id} · ${account.balance.toFixed(2)} ${account.currency}`;
