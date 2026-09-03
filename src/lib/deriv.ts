@@ -237,18 +237,28 @@ export async function listDerivAccounts(tokens: string[]): Promise<DerivAccount[
   const errors: string[] = [];
 
   for (const token of unique) {
+    const preferPat = detectTokenMode(token) === "pat";
     try {
-      const accounts =
-        detectTokenMode(token) === "pat"
-          ? await listPatAccounts(token)
-          : await listLegacyAccounts(token);
+      const accounts = preferPat ? await listPatAccounts(token) : await listLegacyAccounts(token);
       accounts.forEach((account) => {
         if (!results.some((r) => r.id === account.id)) results.push(account);
       });
     } catch (error: any) {
-      errors.push(error?.message || "Token failed");
+      // Many Deriv tokens (including long PAT-looking ones) still authorize over
+      // the classic WebSocket API. If one path fails, try the other before giving up.
+      try {
+        const accounts = preferPat
+          ? await listLegacyAccounts(token)
+          : await listPatAccounts(token);
+        accounts.forEach((account) => {
+          if (!results.some((r) => r.id === account.id)) results.push(account);
+        });
+      } catch (fallbackError: any) {
+        errors.push(error?.message || fallbackError?.message || "Token failed");
+      }
     }
   }
+
 
   if (results.length === 0) {
     throw new Error(errors[0] || "No Deriv accounts found for this token");
@@ -282,27 +292,53 @@ export async function authorizeDerivAccount(account: DerivAccount): Promise<Deri
   }
 
   // PAT: request an OTP-authenticated WebSocket URL for this exact account.
-  const otpResponse = await derivRest<{ data?: { url?: string; websocket_url?: string } }>(
-    `/accounts/${encodeURIComponent(account.id)}/otp`,
-    account.token,
-    { method: "POST" },
-  );
+  try {
+    const otpResponse = await derivRest<{ data?: { url?: string; websocket_url?: string } }>(
+      `/accounts/${encodeURIComponent(account.id)}/otp`,
+      account.token,
+      { method: "POST" },
+    );
 
-  const websocketUrl = String(otpResponse.data?.url || otpResponse.data?.websocket_url || "");
-  if (!websocketUrl) throw new Error("Deriv PAT API did not return a WebSocket URL");
+    const websocketUrl = String(otpResponse.data?.url || otpResponse.data?.websocket_url || "");
+    if (!websocketUrl) throw new Error("Deriv PAT API did not return a WebSocket URL");
 
-  const ws = new DerivWS();
-  ws.mode = "pat";
-  await ws.connect(websocketUrl);
+    const ws = new DerivWS();
+    ws.mode = "pat";
+    await ws.connect(websocketUrl);
 
-  return {
-    ws,
-    loginid: account.id,
-    currency: account.currency,
-    balance: account.balance,
-    mode: "pat",
-  };
+    return {
+      ws,
+      loginid: account.id,
+      currency: account.currency,
+      balance: account.balance,
+      mode: "pat",
+    };
+  } catch (patError: any) {
+    // Fall back to the classic WebSocket authorize, which accepts most Deriv tokens.
+    const ws = new DerivWS();
+    ws.mode = "legacy";
+    try {
+      await ws.connect();
+      const auth = await ws.send<any>({ authorize: account.token });
+      if (!auth?.authorize) throw new Error("Invalid token");
+      return {
+        ws,
+        loginid: String(auth.authorize.loginid),
+        currency: String(auth.authorize.currency || account.currency || "USD"),
+        balance: Number(auth.authorize.balance ?? account.balance ?? 0),
+        mode: "legacy",
+      };
+    } catch (legacyError: any) {
+      ws.close();
+      throw new Error(
+        patError?.message?.includes("401")
+          ? "Deriv rejected this token (401). Create a new API token at app.deriv.com with Read, Trade and Payments scopes, then paste it again."
+          : patError?.message || legacyError?.message || "Could not connect to Deriv",
+      );
+    }
+  }
 }
+
 
 export function accountLabel(account: DerivAccount) {
   return `${account.isDemo ? "Demo" : "Real"} · ${account.id} · ${account.balance.toFixed(2)} ${account.currency}`;
