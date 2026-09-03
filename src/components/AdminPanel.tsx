@@ -107,18 +107,18 @@ function ResendKeysCard({ token }: { token: string }) {
           entries
             .filter((e) => !HIDDEN_RESEND_EMAILS.includes(e.email.toLowerCase()))
             .map((e) => (
-            <div key={e.email} className="flex items-center justify-between rounded-md border px-2 py-1.5 text-xs">
-              <span className="truncate">
-                <span className="font-medium">{e.email}</span>
-                <span className="ml-2 text-muted-foreground">{e.keyPreview}</span>
-              </span>
-              {!e.builtIn && (
-                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => remove(e.email)}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-          ))
+              <div key={e.email} className="flex items-center justify-between rounded-md border px-2 py-1.5 text-xs">
+                <span className="truncate">
+                  <span className="font-medium">{e.email}</span>
+                  <span className="ml-2 text-muted-foreground">{e.keyPreview}</span>
+                </span>
+                {!e.builtIn && (
+                  <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => remove(e.email)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            ))
         )}
       </div>
       <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
