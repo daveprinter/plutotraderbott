@@ -456,8 +456,12 @@ export const adminVerify = createServerFn({ method: "POST" })
     const v = input as { token?: string; code?: string };
     return { token: String(v?.token ?? ""), code: String(v?.code ?? "").trim() };
   })
-  .handler(async ({ data }): Promise<{ ok: boolean; message: string; expired?: boolean }> => {
+  .handler(async ({ data }): Promise<{ ok: boolean; message: string; expired?: boolean; locked?: boolean }> => {
     const supabaseAdmin = await adminClient();
+    const fingerprint = await requestFingerprint();
+    const gate = await checkLockout(supabaseAdmin, fingerprint, "verify_code");
+    if (gate.locked) return { ok: false, locked: true, message: gate.message! };
+
     const { data: session } = await supabaseAdmin
       .from("admin_sessions")
       .select("*")
@@ -493,7 +497,16 @@ export const adminVerify = createServerFn({ method: "POST" })
           return Date.now() - sentAt <= CODE_TTL_MS;
         });
       }
-      if (!matched) return { ok: false, message: "Wrong verification code." };
+      if (!matched) {
+        await recordAttempt(supabaseAdmin, fingerprint, false, "verify_code");
+        const left = Math.max(0, gate.remaining - 1);
+        return {
+          ok: false,
+          message: left
+            ? `Wrong verification code. ${left} attempt${left === 1 ? "" : "s"} left before a 15-minute lockout.`
+            : "Wrong verification code. Admin login is now locked for 15 minutes.",
+        };
+      }
 
       const sentAt = new Date(session.code_sent_at ?? session.created_at).getTime();
       if (
@@ -505,6 +518,7 @@ export const adminVerify = createServerFn({ method: "POST" })
       }
     }
 
+    await recordAttempt(supabaseAdmin, fingerprint, true, "verify_code");
     await supabaseAdmin.from("admin_sessions").update({ verified: true }).eq("id", session.id);
     return { ok: true, message: "Welcome to the admin panel." };
   });
