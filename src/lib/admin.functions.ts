@@ -292,16 +292,19 @@ async function requestFingerprint(): Promise<string> {
   }
 }
 
+type AttemptKind = "admin_code" | "verify_code";
+
 async function checkLockout(
   supabaseAdmin: Awaited<ReturnType<typeof adminClient>>,
   fingerprint: string,
+  kind: AttemptKind = "admin_code",
 ): Promise<{ locked: boolean; message?: string; remaining: number }> {
   const since = new Date(Date.now() - ATTEMPT_WINDOW_MS).toISOString();
   const { data: rows } = await supabaseAdmin
     .from("admin_login_attempts")
     .select("success, created_at")
     .eq("fingerprint", fingerprint)
-    .eq("kind", "admin_code")
+    .eq("kind", kind)
     .gte("created_at", since)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -331,8 +334,9 @@ async function recordAttempt(
   supabaseAdmin: Awaited<ReturnType<typeof adminClient>>,
   fingerprint: string,
   success: boolean,
+  kind: AttemptKind = "admin_code",
 ) {
-  await supabaseAdmin.from("admin_login_attempts").insert({ fingerprint, success, kind: "admin_code" });
+  await supabaseAdmin.from("admin_login_attempts").insert({ fingerprint, success, kind });
 }
 
 /** Step 0 — validate only the admin panel code, before asking for the email. */
