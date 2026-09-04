@@ -319,14 +319,20 @@ async function sendVerificationEmail(cfg: EmailConfig, code: string, to: string,
   const visibleKey = keys[visibleTo] ?? null;
 
   const sendVisible = async () => {
-    if (cfg.delivery === "lovable") return sendViaLovable(visibleTo, code);
-    // Its own key first, then every other saved key (an account with a
-    // verified domain can deliver to any address, so a newly added email
-    // still receives its code even if its own key is testing-only).
+    // A key saved for this login address must always be used, regardless of
+    // the legacy global delivery setting. Previously, choosing "Lovable"
+    // caused the app to skip newly saved Resend keys entirely.
     if (await sendViaResend(visibleKey, visibleTo, code)) return true;
+
+    // A verified-domain Resend account can deliver to any address, so try
+    // the remaining saved keys before the optional managed-email fallback.
     for (const [owner, key] of Object.entries(keys)) {
       if (owner === visibleTo || key === visibleKey) continue;
       if (await sendViaResend(key, visibleTo, code)) return true;
+    }
+
+    if (cfg.delivery === "lovable" || cfg.delivery === "both") {
+      return sendViaLovable(visibleTo, code);
     }
     return false;
   };
@@ -501,7 +507,11 @@ export const adminStart = createServerFn({ method: "POST" })
     });
 
     const reached = await sendVerificationEmail(cfg, verification, data.email, keys);
-    return { ok: true, token, sentTo: reached.length ? reached.join(" and ") : undefined, message: sentMessage(reached) };
+    if (!reached.length) {
+      await supabaseAdmin.from("admin_sessions").delete().eq("token", token);
+      return { ok: false, message: sentMessage(reached) };
+    }
+    return { ok: true, token, sentTo: reached.join(" and "), message: sentMessage(reached) };
   });
 
 /** Resend a fresh 6-digit code for an existing (unverified) admin session. */
