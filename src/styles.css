@@ -154,11 +154,6 @@
   }
 }
 
-/* Cards whose contents update on every tick get paint containment so a repaint
-   never bleeds outside their own box. */
-[data-slot="card"] {
-  contain: paint;
-}
 
 
 @theme inline {
