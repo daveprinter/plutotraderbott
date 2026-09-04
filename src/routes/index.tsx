@@ -201,6 +201,7 @@ function PlutoTrader({ licenseCode, onSignOut }: { licenseCode: string; onSignOu
   const [switchCount, setSwitchCount] = usePersistentState("switchCount", "5");
 
   // runtime
+  const [markupPct, setMarkupPct] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
   const [status, setStatus] = useState("Idle");
@@ -308,6 +309,7 @@ function PlutoTrader({ licenseCode, onSignOut }: { licenseCode: string; onSignOu
           toast.info(reason);
         },
         onBalance: (b) => setBalance(b),
+        onMarkup: (pct) => setMarkupPct(pct),
         onMarketSwitch: (next) => {
           setSymbol(next);
           setPrice("—");
@@ -411,9 +413,15 @@ function PlutoTrader({ licenseCode, onSignOut }: { licenseCode: string; onSignOu
       return;
     }
     engine.updateConfig(buildConfig());
-    engine.start();
     setRunning(true);
     setPaused(false);
+    engine.start();
+    // Read the live markup configured on Deriv for this app before trading.
+    setStatus("Checking markup…");
+    void engine.refreshMarkup().then((pct) => {
+      setStatus(engine.isRunning ? (engine.isPaused ? "Paused" : "Running") : "Idle");
+      if (pct !== null) toast.info(`Deriv app markup: ${pct.toFixed(2)}%`);
+    });
   };
 
   const togglePause = () => {
@@ -929,6 +937,10 @@ function PlutoTrader({ licenseCode, onSignOut }: { licenseCode: string; onSignOu
             <div className="grid grid-cols-2 gap-3">
               <Stat label="Total stake" value={stats.totalStake.toFixed(2)} />
               <Stat label="Total payout" value={stats.totalPayout.toFixed(2)} />
+              <Stat
+                label="Deriv markup"
+                value={markupPct === null ? "—" : `${markupPct.toFixed(2)}%`}
+              />
               <Stat label="No. of runs" value={String(stats.runs)} />
               <Stat label="Contracts won" value={String(stats.wins)} />
               <Stat label="Contracts lost" value={String(stats.losses)} />
