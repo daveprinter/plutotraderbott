@@ -127,8 +127,6 @@ export class BotEngine {
     type: ContractType;
     barrier: number | null;
     entrySpot: string;
-    /** true once the contract has seen a tick after purchase, so the next tick settles it */
-    ready: boolean;
   }[] = [];
 
   private currentStake = 0;
@@ -263,20 +261,16 @@ export class BotEngine {
 
     const everyTick = this.cfg.speed === "everytick";
 
-    // Settle the contract that already saw a tick after purchase. Only one
-    // contract is ever in flight, so the martingale stake computed inside
-    // processResult() is always applied to the very next purchase.
-    const readyIdx = this.pendings.findIndex((p) => p.ready);
-    if (readyIdx !== -1) {
-      const p = this.pendings.splice(readyIdx, 1)[0]!;
+    // Settle the in-flight contract on the FIRST tick after purchase (1 tick
+    // duration), so every-tick mode trades on consecutive ticks.
+    if (this.pendings.length > 0) {
+      const p = this.pendings.shift()!;
       const win = isWinFor(p.type, digit, p.barrier);
       const profit = win ? round2(p.payout - p.buyPrice) : -p.buyPrice;
       this.processResult(win, profit, digit, p, priceStr);
       if (!this.running) return;
       if (!everyTick) this.skipTick = true;
     }
-    // Any remaining contract has now seen a tick, so the next tick settles it
-    for (const p of this.pendings) p.ready = true;
 
     if (!this.running || this.paused || this.switching) return;
     if (this.buying || this.pendings.length > 0) return;
@@ -291,6 +285,7 @@ export class BotEngine {
     this.skipTick = false;
     void this.placeTrade();
   }
+
 
 
   private nextContract(): { type: ContractType; barrier: number | null } {
@@ -489,7 +484,6 @@ export class BotEngine {
         type,
         barrier,
         entrySpot,
-        ready: false,
       });
       this.buying = false;
     } catch (error: any) {
