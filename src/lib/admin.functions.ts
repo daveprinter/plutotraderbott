@@ -885,6 +885,9 @@ export const adminSaveResendKey = createServerFn({ method: "POST" })
     const map = await loadKeyMap(supabaseAdmin, cfg);
     map[data.email] = data.apiKey;
     await saveKeyMap(supabaseAdmin, map);
+    // Re-adding an address undoes an earlier removal.
+    const removed = await loadRemovedEmails(supabaseAdmin);
+    if (removed.delete(data.email)) await saveRemovedEmails(supabaseAdmin, removed);
     return { ok: true, message: `Resend key saved for ${data.email}. Login codes can now be sent to it.` };
 
   });
