@@ -1,4 +1,4 @@
-import type { DerivWS } from "./deriv";
+import { fetchAppMarkupPct, type DerivWS } from "./deriv";
 
 export type ContractType = "DIGITDIFF" | "DIGITOVER" | "DIGITUNDER" | "DIGITEVEN" | "DIGITODD";
 export type RecoveryKind = "over" | "under" | "even" | "odd";
@@ -84,6 +84,7 @@ export interface EngineCallbacks {
   onStop: (reason: string) => void;
   onBalance?: (balance: number) => void;
   onMarketSwitch?: (symbol: string) => void;
+  onMarkup?: (pct: number | null) => void;
 
 }
 
@@ -160,6 +161,17 @@ export class BotEngine {
     // Symbol is owned by the engine (subscribeTicks / auto switching) so a late
     // config push from the UI can never revert an in-flight market switch.
     this.cfg = { ...cfg, symbol: this.cfg.symbol };
+  }
+
+  /** Markup (%) currently configured for the trading app on Deriv. */
+  markupPct: number | null = null;
+
+  /** Re-read the app markup from Deriv; call before each run so owner changes apply. */
+  async refreshMarkup(): Promise<number | null> {
+    const pct = await fetchAppMarkupPct(this.ws, this.cfg.symbol, this.cfg.currency || "USD");
+    this.markupPct = pct;
+    this.cb.onMarkup?.(pct);
+    return pct;
   }
 
   getStats() {
