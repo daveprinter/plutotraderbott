@@ -137,11 +137,29 @@
     border-color: var(--color-border);
   }
 
+  html {
+    /* Avoid mobile compositing artifacts (ghost/repeated bands) while scrolling
+       a long, frequently re-rendering page. */
+    -webkit-tap-highlight-color: transparent;
+    overflow-anchor: none;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    /* Force the page onto its own compositor layer so partial repaints during
+       scroll cannot leave stale strips behind. */
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
 }
+
+/* Cards whose contents update on every tick get paint containment so a repaint
+   never bleeds outside their own box. */
+[data-slot="card"] {
+  contain: paint;
+}
+
 
 @theme inline {
   --color-win: var(--win);
