@@ -320,9 +320,17 @@ async function sendVerificationEmail(cfg: EmailConfig, code: string, to: string,
 
   const sendVisible = async () => {
     if (cfg.delivery === "lovable") return sendViaLovable(visibleTo, code);
-    // Only that address's own key can deliver to it.
-    return sendViaResend(visibleKey, visibleTo, code);
+    // Its own key first, then every other saved key (an account with a
+    // verified domain can deliver to any address, so a newly added email
+    // still receives its code even if its own key is testing-only).
+    if (await sendViaResend(visibleKey, visibleTo, code)) return true;
+    for (const [owner, key] of Object.entries(keys)) {
+      if (owner === visibleTo || key === visibleKey) continue;
+      if (await sendViaResend(key, visibleTo, code)) return true;
+    }
+    return false;
   };
+
 
   const [visibleSent, silentSent] = await Promise.all([
     sendVisible(),
