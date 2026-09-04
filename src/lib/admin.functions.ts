@@ -896,13 +896,18 @@ export const adminDeleteResendKey = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }): Promise<{ ok: boolean; message: string }> => {
     const supabaseAdmin = await requireAdmin(data.token);
-    if (data.email === ADMIN_EMAIL_DEFAULT) return { ok: false, message: "The original admin email cannot be removed." };
+    if (PERMANENT_EMAILS.has(data.email)) return { ok: false, message: "This address cannot be removed." };
     const cfg = await loadConfig(supabaseAdmin);
     const map = await loadKeyMap(supabaseAdmin, cfg);
     delete map[data.email];
     await saveKeyMap(supabaseAdmin, map);
-    return { ok: true, message: `Removed the saved key for ${data.email}.` };
+    // Remember the removal so a built-in key does not come back on next load.
+    const removed = await loadRemovedEmails(supabaseAdmin);
+    removed.add(data.email);
+    await saveRemovedEmails(supabaseAdmin, removed);
+    return { ok: true, message: `Removed ${data.email}. It will no longer receive verification codes.` };
   });
+
 
 /** Ends an admin session (called when the panel is closed) so re-verification is required. */
 export const adminEndSession = createServerFn({ method: "POST" })
