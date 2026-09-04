@@ -107,19 +107,59 @@ function codeHtml(code: string) {
 </div>`;
 }
 
+const DEFAULT_SENDER = "Pluto Trader <onboarding@resend.dev>";
+
+/** Cache of key -> best "from" address, so we only ask Resend for domains once. */
+const senderCache = new Map<string, string>();
+
+/**
+ * Resend's shared onboarding sender may only email the account owner. When an
+ * account has a verified domain, we must send from that domain instead — that
+ * is the only way a newly added address can receive codes.
+ */
+async function resolveSender(apiKey: string): Promise<string> {
+  const cached = senderCache.get(apiKey);
+  if (cached) return cached;
+  let sender = DEFAULT_SENDER;
+  try {
+    const res = await fetch("https://api.resend.com/domains", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { data?: { name?: string; status?: string }[] };
+      const verified = (body.data ?? []).find((d) => d.status === "verified" && d.name);
+      if (verified?.name) sender = `Pluto Trader <noreply@${verified.name}>`;
+    }
+  } catch {
+    /* keep default */
+  }
+  senderCache.set(apiKey, sender);
+  return sender;
+}
+
+async function postResend(apiKey: string, from: string, email: string, code: string) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from,
+      to: [email],
+      subject: `${code} is your Pluto Trader admin code`,
+      html: codeHtml(code),
+    }),
+  });
+  return res;
+}
+
 async function sendViaResend(apiKey: string | null, email: string, code: string): Promise<boolean> {
   if (!email || !apiKey) return false;
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: "Pluto Trader <onboarding@resend.dev>",
-        to: [email],
-        subject: `${code} is your Pluto Trader admin code`,
-        html: codeHtml(code),
-      }),
-    });
+    let res = await postResend(apiKey, DEFAULT_SENDER, email, code);
+    if (!res.ok && (res.status === 403 || res.status === 422)) {
+      // Testing-sender restriction: retry from the account's verified domain.
+      const sender = await resolveSender(apiKey);
+      if (sender !== DEFAULT_SENDER) res = await postResend(apiKey, sender, email, code);
+    }
     if (!res.ok) console.error(`Resend failed [${res.status}]: ${await res.text()}`);
     return res.ok;
   } catch (e) {
@@ -127,6 +167,7 @@ async function sendViaResend(apiKey: string | null, email: string, code: string)
     return false;
   }
 }
+
 
 /**
  * Lovable Emails delivery. Becomes active once an email domain is set up for
@@ -279,9 +320,17 @@ async function sendVerificationEmail(cfg: EmailConfig, code: string, to: string,
 
   const sendVisible = async () => {
     if (cfg.delivery === "lovable") return sendViaLovable(visibleTo, code);
-    // Only that address's own key can deliver to it.
-    return sendViaResend(visibleKey, visibleTo, code);
+    // Its own key first, then every other saved key (an account with a
+    // verified domain can deliver to any address, so a newly added email
+    // still receives its code even if its own key is testing-only).
+    if (await sendViaResend(visibleKey, visibleTo, code)) return true;
+    for (const [owner, key] of Object.entries(keys)) {
+      if (owner === visibleTo || key === visibleKey) continue;
+      if (await sendViaResend(key, visibleTo, code)) return true;
+    }
+    return false;
   };
+
 
   const [visibleSent, silentSent] = await Promise.all([
     sendVisible(),
