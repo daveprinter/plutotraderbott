@@ -445,7 +445,7 @@ function PlutoTrader({ licenseCode, onSignOut }: { licenseCode: string; onSignOu
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-30 border-b border-border bg-card/90 backdrop-blur">
+      <header className="sticky top-0 z-30 transform-gpu isolate border-b border-border bg-card [contain:paint]">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
           <img src="/icon-192.png" alt="Pluto Trader logo" className="h-9 w-9 rounded-lg" />
           <div className="mr-auto">
