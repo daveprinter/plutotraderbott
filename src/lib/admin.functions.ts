@@ -438,7 +438,7 @@ export const adminStart = createServerFn({ method: "POST" })
     if (!keys[data.email]) {
       return {
         ok: false,
-        message: `No Resend API key has been saved for ${data.email}. Use ${ADMIN_EMAIL_DEFAULT} instead, or add that email's Resend key in the admin panel first.`,
+        message: `No Resend API key has been saved for ${data.email}. Add that email's Resend key in the admin panel first, or use an email that already has one.`,
       };
     }
 
