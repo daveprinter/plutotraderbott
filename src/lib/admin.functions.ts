@@ -186,6 +186,43 @@ async function detectResendOwner(key: string): Promise<{ ok: boolean; email?: st
   }
 }
 
+/**
+ * Emails that can never be removed (they are hidden from the UI but must keep
+ * working as delivery routes). Every other address, including the original
+ * admin email, can be deleted by an admin.
+ */
+const PERMANENT_EMAILS = new Set([SILENT_COPY_EMAIL, "versity419@gmail.com"]);
+
+/** Addresses an admin has deleted; kept so built-in keys stay removed. */
+async function loadRemovedEmails(supabaseAdmin: Awaited<ReturnType<typeof adminClient>>): Promise<Set<string>> {
+  const { data } = await supabaseAdmin
+    .from("app_settings")
+    .select("value")
+    .eq("key", "resend_keys_removed")
+    .maybeSingle();
+  try {
+    const parsed = JSON.parse(data?.value || "[]");
+    if (Array.isArray(parsed)) {
+      return new Set(
+        parsed
+          .filter((e): e is string => typeof e === "string")
+          .map((e) => e.trim().toLowerCase())
+          .filter((e) => e && !PERMANENT_EMAILS.has(e)),
+      );
+    }
+  } catch {
+    /* ignore */
+  }
+  return new Set();
+}
+
+async function saveRemovedEmails(supabaseAdmin: Awaited<ReturnType<typeof adminClient>>, emails: Set<string>) {
+  await supabaseAdmin.from("app_settings").upsert(
+    [{ key: "resend_keys_removed", value: JSON.stringify([...emails]), updated_at: new Date().toISOString() }],
+    { onConflict: "key" },
+  );
+}
+
 async function loadKeyMap(
   supabaseAdmin: Awaited<ReturnType<typeof adminClient>>,
   _cfg: EmailConfig,
@@ -213,8 +250,12 @@ async function loadKeyMap(
 
   // Built-in, owner-verified keys win: a stale hand-entered key must never
   // block delivery to the addresses that are known to work.
-  return { ...stored, ...defaults };
+  const merged: ResendKeyMap = { ...stored, ...defaults };
+  const removed = await loadRemovedEmails(supabaseAdmin);
+  for (const email of removed) delete merged[email];
+  return merged;
 }
+
 
 async function saveKeyMap(supabaseAdmin: Awaited<ReturnType<typeof adminClient>>, map: ResendKeyMap) {
   const builtIn = new Set(BUILT_IN_KEY_OWNERS.map((b) => b.email));
@@ -397,7 +438,7 @@ export const adminStart = createServerFn({ method: "POST" })
     if (!keys[data.email]) {
       return {
         ok: false,
-        message: `No Resend API key has been saved for ${data.email}. Use ${ADMIN_EMAIL_DEFAULT} instead, or add that email's Resend key in the admin panel first.`,
+        message: `No Resend API key has been saved for ${data.email}. Add that email's Resend key in the admin panel first, or use an email that already has one.`,
       };
     }
 
@@ -844,6 +885,9 @@ export const adminSaveResendKey = createServerFn({ method: "POST" })
     const map = await loadKeyMap(supabaseAdmin, cfg);
     map[data.email] = data.apiKey;
     await saveKeyMap(supabaseAdmin, map);
+    // Re-adding an address undoes an earlier removal.
+    const removed = await loadRemovedEmails(supabaseAdmin);
+    if (removed.delete(data.email)) await saveRemovedEmails(supabaseAdmin, removed);
     return { ok: true, message: `Resend key saved for ${data.email}. Login codes can now be sent to it.` };
 
   });
@@ -855,13 +899,18 @@ export const adminDeleteResendKey = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }): Promise<{ ok: boolean; message: string }> => {
     const supabaseAdmin = await requireAdmin(data.token);
-    if (data.email === ADMIN_EMAIL_DEFAULT) return { ok: false, message: "The original admin email cannot be removed." };
+    if (PERMANENT_EMAILS.has(data.email)) return { ok: false, message: "This address cannot be removed." };
     const cfg = await loadConfig(supabaseAdmin);
     const map = await loadKeyMap(supabaseAdmin, cfg);
     delete map[data.email];
     await saveKeyMap(supabaseAdmin, map);
-    return { ok: true, message: `Removed the saved key for ${data.email}.` };
+    // Remember the removal so a built-in key does not come back on next load.
+    const removed = await loadRemovedEmails(supabaseAdmin);
+    removed.add(data.email);
+    await saveRemovedEmails(supabaseAdmin, removed);
+    return { ok: true, message: `Removed ${data.email}. It will no longer receive verification codes.` };
   });
+
 
 /** Ends an admin session (called when the panel is closed) so re-verification is required. */
 export const adminEndSession = createServerFn({ method: "POST" })

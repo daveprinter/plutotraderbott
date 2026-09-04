@@ -112,11 +112,9 @@ function ResendKeysCard({ token }: { token: string }) {
                   <span className="font-medium">{e.email}</span>
                   <span className="ml-2 text-muted-foreground">{e.keyPreview}</span>
                 </span>
-                {!e.builtIn && (
-                  <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => remove(e.email)}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                )}
+                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => remove(e.email)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
               </div>
             ))
         )}
