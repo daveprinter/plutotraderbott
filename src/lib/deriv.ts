@@ -1,7 +1,7 @@
 export const DERIV_LEGACY_APP_ID = "1089";
 
 // PAT REST requests must use the App ID registered for this integration.
-export const DERIV_NEW_APP_ID = "33uaaVh8xkm8lpUWTHDkm";
+export const DERIV_NEW_APP_ID = "34iQJM8rLlaWOmHKfUM0X";
 
 const DERIV_LEGACY_WS = `wss://ws.derivws.com/websockets/v3?app_id=${DERIV_LEGACY_APP_ID}`;
 
