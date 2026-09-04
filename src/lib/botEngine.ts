@@ -127,8 +127,6 @@ export class BotEngine {
     type: ContractType;
     barrier: number | null;
     entrySpot: string;
-    /** true once the contract has seen a tick after purchase, so the next tick settles it */
-    ready: boolean;
   }[] = [];
 
   private currentStake = 0;
@@ -486,7 +484,6 @@ export class BotEngine {
         type,
         barrier,
         entrySpot,
-        ready: false,
       });
       this.buying = false;
     } catch (error: any) {
