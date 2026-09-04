@@ -251,35 +251,32 @@ export class BotEngine {
 
     const everyTick = this.cfg.speed === "everytick";
 
-    // Settle the oldest contract that already saw a tick after purchase
+    // Settle the contract that already saw a tick after purchase. Only one
+    // contract is ever in flight, so the martingale stake computed inside
+    // processResult() is always applied to the very next purchase.
     const readyIdx = this.pendings.findIndex((p) => p.ready);
     if (readyIdx !== -1) {
       const p = this.pendings.splice(readyIdx, 1)[0]!;
       const win = isWinFor(p.type, digit, p.barrier);
       const profit = win ? round2(p.payout - p.buyPrice) : -p.buyPrice;
       this.processResult(win, profit, digit, p, priceStr);
-      if (!everyTick) this.skipTick = true;
       if (!this.running) return;
+      if (!everyTick) this.skipTick = true;
     }
-    // Remaining contracts have now seen a tick, so the next tick settles them
+    // Any remaining contract has now seen a tick, so the next tick settles it
     for (const p of this.pendings) p.ready = true;
 
     if (!this.running || this.paused || this.switching) return;
+    if (this.buying || this.pendings.length > 0) return;
 
-    if (!everyTick) {
-      if (this.skipTick) {
-        this.skipTick = false;
-        return;
-      }
-      if (this.buying || this.pendings.length > 0) return;
-      void this.placeTrade();
+    if (!everyTick && this.skipTick) {
+      this.skipTick = false;
       return;
     }
 
-    // Every-tick mode: keep a purchase in flight on every tick so no tick is skipped
-    // while a previous 1-tick contract is still settling.
+    // Every-tick mode re-enters on the SAME tick that settled the previous
+    // contract, using the freshly updated (martingale) stake.
     this.skipTick = false;
-    if (this.buying || this.pendings.length + 1 > 2) return;
     void this.placeTrade();
   }
 
