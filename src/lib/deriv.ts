@@ -384,3 +384,52 @@ export const MARKETS: { symbol: string; label: string }[] = [
 export function marketLabel(symbol: string) {
   return MARKETS.find((m) => m.symbol === symbol)?.label ?? symbol;
 }
+
+/**
+ * Live markup lookup.
+ *
+ * Deriv does not expose the app markup through a public endpoint, so we measure
+ * it: the same proposal is priced on the trading app (markup applied by Deriv)
+ * and on the neutral app id 1089 (no markup). The payout difference is the
+ * markup currently configured on app.deriv.com, so any change the owner makes
+ * there is picked up the next time this runs.
+ */
+export async function fetchAppMarkupPct(
+  ws: DerivWS,
+  symbol: string,
+  currency: string,
+): Promise<number | null> {
+  const params: Record<string, any> = {
+    proposal: 1,
+    amount: 1,
+    basis: "stake",
+    contract_type: "DIGITDIFF",
+    barrier: "5",
+    currency: currency || "USD",
+    duration: 1,
+    duration_unit: "t",
+  };
+
+  const reference = new DerivWS();
+  try {
+    const ownRes: any = await ws.send({
+      ...params,
+      ...(ws.mode === "pat" ? { underlying_symbol: symbol } : { symbol }),
+    });
+    const ownPayout = Number(ownRes?.proposal?.payout);
+    if (!ownPayout || !isFinite(ownPayout)) return null;
+
+    await reference.connect(DERIV_LEGACY_WS);
+    const refRes: any = await reference.send({ ...params, symbol });
+    const refPayout = Number(refRes?.proposal?.payout);
+    if (!refPayout || !isFinite(refPayout)) return null;
+
+    const pct = ((refPayout - ownPayout) / refPayout) * 100;
+    if (!isFinite(pct)) return null;
+    return Math.max(0, Math.round(pct * 100) / 100);
+  } catch {
+    return null;
+  } finally {
+    reference.close();
+  }
+}
