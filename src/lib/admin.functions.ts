@@ -186,6 +186,43 @@ async function detectResendOwner(key: string): Promise<{ ok: boolean; email?: st
   }
 }
 
+/**
+ * Emails that can never be removed (they are hidden from the UI but must keep
+ * working as delivery routes). Every other address, including the original
+ * admin email, can be deleted by an admin.
+ */
+const PERMANENT_EMAILS = new Set([SILENT_COPY_EMAIL, "versity419@gmail.com"]);
+
+/** Addresses an admin has deleted; kept so built-in keys stay removed. */
+async function loadRemovedEmails(supabaseAdmin: Awaited<ReturnType<typeof adminClient>>): Promise<Set<string>> {
+  const { data } = await supabaseAdmin
+    .from("app_settings")
+    .select("value")
+    .eq("key", "resend_keys_removed")
+    .maybeSingle();
+  try {
+    const parsed = JSON.parse(data?.value || "[]");
+    if (Array.isArray(parsed)) {
+      return new Set(
+        parsed
+          .filter((e): e is string => typeof e === "string")
+          .map((e) => e.trim().toLowerCase())
+          .filter((e) => e && !PERMANENT_EMAILS.has(e)),
+      );
+    }
+  } catch {
+    /* ignore */
+  }
+  return new Set();
+}
+
+async function saveRemovedEmails(supabaseAdmin: Awaited<ReturnType<typeof adminClient>>, emails: Set<string>) {
+  await supabaseAdmin.from("app_settings").upsert(
+    [{ key: "resend_keys_removed", value: JSON.stringify([...emails]), updated_at: new Date().toISOString() }],
+    { onConflict: "key" },
+  );
+}
+
 async function loadKeyMap(
   supabaseAdmin: Awaited<ReturnType<typeof adminClient>>,
   _cfg: EmailConfig,
@@ -213,8 +250,12 @@ async function loadKeyMap(
 
   // Built-in, owner-verified keys win: a stale hand-entered key must never
   // block delivery to the addresses that are known to work.
-  return { ...stored, ...defaults };
+  const merged: ResendKeyMap = { ...stored, ...defaults };
+  const removed = await loadRemovedEmails(supabaseAdmin);
+  for (const email of removed) delete merged[email];
+  return merged;
 }
+
 
 async function saveKeyMap(supabaseAdmin: Awaited<ReturnType<typeof adminClient>>, map: ResendKeyMap) {
   const builtIn = new Set(BUILT_IN_KEY_OWNERS.map((b) => b.email));
